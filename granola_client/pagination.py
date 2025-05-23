@@ -5,7 +5,7 @@ T = TypeVar("T", bound=BaseModel)
 
 class PaginatedResponse(BaseModel, Generic[T]):
     items: List[T]
-    next_cursor: Optional[str] = Field(None, alias="nextCursor")
+    next_cursor: Optional[str] = Field(None, alias="next_cursor")
 
     class Config:
         populate_by_name = True

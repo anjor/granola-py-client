@@ -1,21 +1,21 @@
 import json
 import platform
 from pathlib import Path
-from typing import Optional, AsyncGenerator, Tuple, cast, Dict, Any, List
+from typing import Optional, AsyncGenerator, Tuple, cast, List
 import logging
 
-from pydantic import HttpUrl
+from pydantic import HttpUrl, BaseModel
 
 from .http_client import HttpClient
 from .types import (
-    ClientOpts, HttpOpts,  # These are now Pydantic models
-    Workspace, WorkspaceResponse, Document, DocumentsResponse, DocumentMetadata, TranscriptSegment,
+    ClientOpts,  # These are now Pydantic models
+    WorkspaceResponse, Document, DocumentsResponse, DocumentMetadata, TranscriptSegment,
     PanelTemplate, PeopleResponse, FeatureFlagsResponse, NotionIntegrationResponse,
     SubscriptionsResponse, UpdateDocumentPayload, UpdateDocumentPanelPayload,
     GetDocumentsFilters,
 )
-from .pagination import paginate, PaginatedResponse # PaginatedResponse is now Pydantic
-from .errors import GranolaAuthError, GranolaAPIError
+from .pagination import paginate, PaginatedResponse
+from .errors import GranolaAuthError
 
 logger = logging.getLogger(__name__)
 
