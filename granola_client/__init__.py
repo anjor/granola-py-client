@@ -10,7 +10,6 @@ from .types import (
     # Client/HTTP Options
     ClientOpts, HttpOpts,
     # Core Models
-    Workspace, WorkspaceResponse,
     Document, DocumentsResponse,
     DocumentMetadata, TranscriptSegment, PanelTemplate,
     # Entity Models
@@ -38,7 +37,7 @@ __all__ = [
     # Options
     "ClientOpts", "HttpOpts",
     # Models
-    "Workspace", "WorkspaceResponse", "Document", "DocumentsResponse",
+    "Document", "DocumentsResponse",
     "DocumentMetadata", "TranscriptSegment", "PanelTemplate", "Person",
     "PeopleResponse", "FeatureFlagsResponse", "NotionWorkspace",
     "NotionIntegrationResponse", "Subscription", "SubscriptionsResponse",

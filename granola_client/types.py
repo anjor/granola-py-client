@@ -28,14 +28,6 @@ class ClientOpts(HttpOpts):
 
 # API Response/Payload Models (examples, expand as needed based on actual API schema)
 
-class Workspace(BaseModel):
-    id: str
-    name: str
-    role: Optional[str] = None # Example field
-
-class WorkspaceResponse(BaseModel):
-    workspaces: List[Workspace]
-
 class Document(BaseModel):
     document_id: str = Field(..., alias="id") # Assuming API might use camelCase
     title: str | None = None

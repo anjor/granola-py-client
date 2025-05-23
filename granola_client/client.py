@@ -9,7 +9,7 @@ from pydantic import HttpUrl, BaseModel
 from .http_client import HttpClient
 from .types import (
     ClientOpts,  # These are now Pydantic models
-    WorkspaceResponse, Document, DocumentsResponse, DocumentMetadata, TranscriptSegment,
+    Document, DocumentsResponse, DocumentMetadata, TranscriptSegment,
     PanelTemplate, PeopleResponse, FeatureFlagsResponse, NotionIntegrationResponse,
     SubscriptionsResponse, UpdateDocumentPayload, UpdateDocumentPanelPayload,
     GetDocumentsFilters,
@@ -62,13 +62,6 @@ class GranolaClient:
             logger.error(f"Failed to get auth tokens: {e}", exc_info=True)
             raise GranolaAuthError(f"Failed to extract auth tokens: {e}") from e
 
-
-    async def get_workspaces(self) -> WorkspaceResponse:
-        return await self.http._request_model(
-            "POST", "/v1/get-workspaces",
-            response_model=WorkspaceResponse,
-            payload_dict={} # Granola TS client sends {}
-        )
 
     async def get_documents(self, filters: Optional[GetDocumentsFilters] = None) -> DocumentsResponse:
         payload = filters.model_dump(by_alias=True, exclude_none=True) if filters else {}

@@ -4,22 +4,10 @@ from granola_client import GranolaClient
 # Make your main function async
 async def main():
     client = GranolaClient() # Assuming default init is okay, or provide token/opts
-    print("Attempting to get workspaces...")
+    print("\nAttempting to get documents directly...")
     try:
         # Await the async method
-        workspaces_response = await client.get_workspaces()
-        print("\nWorkspaces Response (Pydantic Model):")
-        print(workspaces_response)
-
-        if workspaces_response and workspaces_response.workspaces:
-            print(f"\nFound {len(workspaces_response.workspaces)} workspaces:")
-            for ws in workspaces_response.workspaces:
-                print(f"  - ID: {ws.id}, Name: {ws.name}, Role: {ws.role}")
-        else:
-            print("No workspaces found or response was empty.")
-
         # Get documents directly without workspace filters
-        print("\nAttempting to get documents directly...")
         documents_response = await client.get_documents()
         print("\nDocuments Response (Pydantic Model):")
         print(documents_response)

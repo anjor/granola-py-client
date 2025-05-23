@@ -58,7 +58,7 @@ It's recommended to use `uv` for managing dependencies in a virtual environment.
 ```python
 import asyncio
 import platform
-from granola_client import GranolaClient, ClientOpts, GranolaAuthError, WorkspaceResponse, DocumentsResponse
+from granola_client import GranolaClient, ClientOpts, GranolaAuthError, DocumentsResponse
 
 async def main():
     client = None
@@ -74,12 +74,6 @@ async def main():
                  return
             client = GranolaClient(token=api_token)
 
-        # Get workspaces
-        workspaces_response: WorkspaceResponse = await client.get_workspaces()
-        print(f"Found {len(workspaces_response.workspaces)} workspaces.")
-        for ws in workspaces_response.workspaces:
-            print(f"  - ID: {ws.id}, Name: {ws.name}, Role: {ws.role}")
-            
         # Get documents
         print("\nRetrieving documents...")
         documents_response: DocumentsResponse = await client.get_documents()
