@@ -1,6 +1,6 @@
 # Granola Python Client
 
-A Python client for the Granola API, designed to mirror the functionality of the [granola-ts-client](https://github.com/mikedemarais/granola-ts-client). This client allows programmatic interaction with Granola's note-taking and meeting management platform. It uses `Pydantic` for robust data validation and `httpx` for asynchronous HTTP requests. It can also mimic the official Granola desktop application headers to help bypass "Unsupported client" validation.
+A Python client for the [Granola API](https://granola.ai/). This client allows programmatic interaction with Granola's note-taking and meeting management platform. It uses `Pydantic` for robust data validation and `httpx` for asynchronous HTTP requests. It can also mimic the official Granola desktop application headers to help bypass "Unsupported client" validation.
 
 ## Features
 
@@ -13,7 +13,7 @@ A Python client for the Granola API, designed to mirror the functionality of the
 
 ## Requirements
 
-*   Python 3.8+
+*   Python 3.13+
 *   `uv` (for package management, recommended)
 
 ## Installation
@@ -55,11 +55,10 @@ It's recommended to use `uv` for managing dependencies in a virtual environment.
     ```
 
 ## Quick Start
-(Quick start remains largely the same, but now responses are Pydantic models)
 ```python
 import asyncio
 import platform
-from granola_client import GranolaClient, ClientOpts, GranolaAuthError, WorkspaceResponse
+from granola_client import GranolaClient, ClientOpts, GranolaAuthError, WorkspaceResponse, DocumentsResponse
 
 async def main():
     client = None
@@ -80,6 +79,16 @@ async def main():
         print(f"Found {len(workspaces_response.workspaces)} workspaces.")
         for ws in workspaces_response.workspaces:
             print(f"  - ID: {ws.id}, Name: {ws.name}, Role: {ws.role}")
+            
+        # Get documents
+        print("\nRetrieving documents...")
+        documents_response: DocumentsResponse = await client.get_documents()
+        if documents_response and documents_response.docs:
+            print(f"Found {len(documents_response.docs)} documents:")
+            for doc in documents_response.docs:
+                print(f"  - ID: {doc.document_id}, Title: {doc.title}")
+        else:
+            print("No documents found or response was empty.")
 
     except GranolaAuthError as e:
         print(f"Authentication Error: {e}")
