@@ -1,0 +1,48 @@
+[project]
+name = "granola-client"
+version = "0.1.0"
+description = "A Python client for the Granola API"
+authors = [
+    { name = "Anjor Kanekar" },
+]
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "httpx>=0.25.0,<0.28.0",
+    "pydantic>=2.0,<3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/granola-py-client"
+Repository = "https://github.com/your-username/granola-py-client"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.20.0", # For testing async code with pytest
+    "pytest-httpx>=0.20.0",  # For mocking HTTPX requests
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "granola_client/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["granola_client"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
