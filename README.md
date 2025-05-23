@@ -1,6 +1,6 @@
 # Granola Python Client
 
-A Python client for the [Granola API](https://granola.ai/). This client allows programmatic interaction with Granola's note-taking and meeting management platform. It uses `Pydantic` for robust data validation and `httpx` for asynchronous HTTP requests. It can also mimic the official Granola desktop application headers to help bypass "Unsupported client" validation.
+A Python client for the [Granola API](https://granola.ai/), inspired by the [typescript client](https://github.com/mikedemarais/granola-ts-client/tree/master). This client allows programmatic interaction with Granola's note-taking and meeting management platform. It uses `Pydantic` for robust data validation and `httpx` for asynchronous HTTP requests. It can also mimic the official Granola desktop application headers to help bypass "Unsupported client" validation.
 
 ## Features
 
