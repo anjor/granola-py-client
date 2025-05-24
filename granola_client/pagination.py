@@ -1,5 +1,5 @@
 from typing import Callable, Awaitable, TypeVar, AsyncGenerator, Generic, Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -7,8 +7,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
     items: List[T]
     next_cursor: Optional[str] = Field(None, alias="next_cursor")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 # FetchPageFunc is already generic with respect to T due to its definition
 FetchPageFunc = Callable[[Optional[str]], Awaitable[PaginatedResponse[T]]]

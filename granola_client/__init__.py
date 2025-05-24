@@ -17,7 +17,7 @@ from .types import (
     # Feature/Integration Models
     FeatureFlagsResponse, NotionWorkspace, NotionIntegrationResponse,
     # Subscription Models
-    Subscription, SubscriptionsResponse,
+    SubscriptionsResponse,
     # Payload Models
     UpdateDocumentPayload, UpdateDocumentPanelPayload,
     # Filter Models
@@ -40,7 +40,7 @@ __all__ = [
     "Document", "DocumentsResponse",
     "DocumentMetadata", "TranscriptSegment", "PanelTemplate", "Person",
     "PeopleResponse", "FeatureFlagsResponse", "NotionWorkspace",
-    "NotionIntegrationResponse", "Subscription", "SubscriptionsResponse",
+    "NotionIntegrationResponse", "SubscriptionsResponse",
     "UpdateDocumentPayload", "UpdateDocumentPanelPayload", "GetDocumentsFilters",
     "PaginatedResponse",
     "__version__",

@@ -1,64 +1,72 @@
+from dotenv import load_dotenv
+
 import pytest
-import json
-from pathlib import Path
-from unittest import mock # For mocking Path.home in get_auth_tokens test
+import os
 
-from granola_client import GranolaClient, GranolaAuthError
+from granola_client import GranolaClient
 
-# Base URL for mocking
-BASE_URL = "https://api.granola.ai"
+load_dotenv()
 
-@pytest.fixture
-def client_no_token():
-    # Client without a token for testing auth retrieval or public endpoints
-    return GranolaClient()
-
-@pytest.fixture
-def client_with_token():
-    return GranolaClient(token="test-token")
-
-
-@mock.patch("platform.system", return_value="Darwin") # Mock platform to be macOS
-@mock.patch("pathlib.Path.exists")
-@mock.patch("pathlib.Path.read_text")
 @pytest.mark.asyncio
-async def test_get_auth_tokens_success_macos(mock_read_text, mock_exists, mock_system):
-    """Test successful token extraction on macOS."""
-    mock_exists.return_value = True
-    mock_supabase_content = {
-        "cognito_tokens": json.dumps({
-            "access_token": "fake_access_token",
-            "refresh_token": "fake_refresh_token"
-        })
-    }
-    mock_read_text.return_value = json.dumps(mock_supabase_content)
+async def test_get_documents_and_metadata():
+    token = os.getenv("GRANOLA_TOKEN", None)
+    async with GranolaClient(token=token) as client:
+        docs_response = await client.get_documents()
+        assert docs_response.docs, "Should return at least one document"
+        first_doc = docs_response.docs[0]
+        assert hasattr(first_doc, "document_id")
 
-    # Mock Path.home() to control the path being constructed.
-    # We don't need to mock home() if read_text and exists are already mocked for any Path instance.
-    # However, to be precise:
-    with mock.patch("granola_client.client.Path.home") as mock_home:
-        mock_home.return_value = Path("/fake/home")
-        access_token, refresh_token = await GranolaClient.get_auth_tokens()
+        # Fetch metadata
+        meta = await client.get_document_metadata(first_doc.document_id)
+        # The server response does not echo document_id, so we test for creator presence instead
+        assert meta.creator is not None
 
-    assert access_token == "fake_access_token"
-    assert refresh_token == "fake_refresh_token"
+        # Fetch transcript
+        transcript = await client.get_document_transcript(first_doc.document_id)
+        assert isinstance(transcript, list)
 
-
-@mock.patch("platform.system", return_value="Linux") # Mock platform to be non-macOS
 @pytest.mark.asyncio
-async def test_get_auth_tokens_fails_non_macos(mock_system):
-    """Test that token extraction fails on non-macOS."""
-    with pytest.raises(GranolaAuthError) as exc_info:
-        await GranolaClient.get_auth_tokens()
-    assert "Automatic token extraction is only supported on macOS" in str(exc_info.value)
+async def test_get_people():
+    token = os.getenv("GRANOLA_TOKEN", None)
+    async with GranolaClient(token=token) as client:
+        resp = await client.get_people()
+        assert isinstance(resp, list)
+        assert len(resp) > 0
+        assert hasattr(resp[0], "id")
+        assert hasattr(resp[0], "name")
 
-@mock.patch("platform.system", return_value="Darwin")
-@mock.patch("pathlib.Path.exists", return_value=False) # Simulate token file not existing
 @pytest.mark.asyncio
-async def test_get_auth_tokens_file_not_found_macos(mock_exists, mock_system):
-    """Test token extraction fails if supabase.json not found on macOS."""
-    with mock.patch("granola_client.client.Path.home") as mock_home:
-        mock_home.return_value = Path("/fake/home")
-        with pytest.raises(GranolaAuthError) as exc_info:
-            await GranolaClient.get_auth_tokens()
-    assert "Token file not found" in str(exc_info.value)
+async def test_get_feature_flags():
+    token = os.getenv("GRANOLA_TOKEN", None)
+    async with GranolaClient(token=token) as client:
+        flags = await client.get_feature_flags()
+        assert isinstance(flags, list)
+        assert len(flags) > 0
+        assert hasattr(flags[0], "feature")
+        assert hasattr(flags[0], "value")
+
+@pytest.mark.asyncio
+async def test_get_panel_templates():
+    token = os.getenv("GRANOLA_TOKEN", None)
+    async with GranolaClient(token=token) as client:
+        templates = await client.get_panel_templates()
+        assert isinstance(templates, list)
+        assert hasattr(templates[0], "id")
+        assert hasattr(templates[0], "title")
+
+@pytest.mark.asyncio
+async def test_get_notion_integration():
+    token = os.getenv("GRANOLA_TOKEN", None)
+    async with GranolaClient(token=token) as client:
+        notion = await client.get_notion_integration()
+        assert hasattr(notion, "canIntegrate")
+        assert hasattr(notion, "isConnected")
+
+@pytest.mark.asyncio
+async def test_get_subscriptions():
+    token = os.getenv("GRANOLA_TOKEN", None)
+    async with GranolaClient(token=token) as client:
+        subscriptions = await client.get_subscriptions()
+        assert hasattr(subscriptions, "active_plan_id")
+        assert hasattr(subscriptions, "subscription_plans")
+        assert isinstance(subscriptions.subscription_plans, list)

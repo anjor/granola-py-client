@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 # Client Options
 class HttpOpts(BaseModel):
@@ -17,9 +17,7 @@ class HttpOpts(BaseModel):
     os_build: Optional[str] = Field(default="", alias="osBuild")
     client_headers: Optional[Dict[str, str]] = Field(default_factory=dict, alias="clientHeaders")
 
-    class Config:
-        populate_by_name = True # Allows using either alias or field name for population
-        extra = 'ignore' # Ignore extra fields passed during initialization
+    model_config = ConfigDict(populate_by_name=True, extra='ignore')
 
 
 class ClientOpts(HttpOpts):
@@ -40,84 +38,91 @@ class Document(BaseModel):
     notes_plain: str | None = Field(default=None, alias="notes_plain")
     overview: str | None = Field(default=None)
 
-    class Config:
-        populate_by_name = True
-        extra = 'ignore'
+    model_config = ConfigDict(populate_by_name=True, extra='ignore')
 
 class DocumentsResponse(BaseModel):
     docs: List[Document]
     next_cursor: Optional[str] = Field(None, alias="next_cursor")
 
-    class Config:
-        populate_by_name = True
-        extra = 'ignore'
+    model_config = ConfigDict(populate_by_name=True, extra='ignore')
 
 
 class Person(BaseModel):
-    id: str
-    name: str
-    email: str
+    id: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
     details: Optional[Dict[str, Any]] = None
 
-class PeopleResponse(BaseModel):
-    people: List[Person]
+# The API returns a list, not an object w/ a `people` key!
+PeopleResponse = List[Person]
 
-class FeatureFlagsResponse(BaseModel):
-    flags: Dict[str, bool]
+# The API returns a list of features, not `{"flags": ...}`
+class FeatureFlag(BaseModel):
+    feature: str
+    value: Any = None
+    user_id: Optional[str] = None
+
+FeatureFlagsResponse = List[FeatureFlag]
 
 class NotionWorkspace(BaseModel):
     id: str
     name: str
 
 class NotionIntegrationResponse(BaseModel):
-    connected: bool
-    workspaces: Optional[List[NotionWorkspace]] = None
+    canIntegrate: bool
+    isConnected: bool
+    authUrl: Optional[str] = None
+    integrations: Optional[dict] = None
+    # If there are additional fields, add as needed.
 
-class Subscription(BaseModel):
+class SubscriptionPlan(BaseModel):
     id: str
-    plan_type: str = Field(..., alias="planType")
-    status: str
-    current_period_end: str = Field(..., alias="currentPeriodEnd")
-    workspace_id: Optional[str] = Field(None, alias="workspaceId")
-    canceled_at: Optional[str] = Field(None, alias="canceledAt")
-
-    class Config:
-        populate_by_name = True
+    type: str
+    display_name: str
+    price: dict
+    currency_iso: str
+    requires_workspace: bool
+    requires_payment: bool
+    privacy_mode: str
+    is_team_upsell_target: bool
+    features: list
+    display_order: int
+    live: bool
 
 class SubscriptionsResponse(BaseModel):
-    subscriptions: List[Subscription]
+    active_plan_id: Optional[str] = None
+    subscription_plans: Optional[list] = None
 
 class DocumentMetadataCreator(BaseModel): # Simplified from Person for this context if structure differs
-    id: str
+    id: Optional[str] = None
     name: str
     email: Optional[str] = None # Example, adjust to actual API
 
 class DocumentMetadata(BaseModel):
-    document_id: str = Field(..., alias="documentId")
+    document_id: Optional[str] = Field(None, alias="document_id")
     creator: DocumentMetadataCreator # Could be Person if it matches
     attendees: Optional[List[Person]] = None # Assuming attendees are Person objects
     # ... other fields
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class TranscriptSegment(BaseModel):
-    start_timestamp: float = Field(..., alias="startTimestamp")
-    end_timestamp: float = Field(..., alias="endTimestamp")
+    start_timestamp: str = Field(..., alias="startTimestamp")
+    end_timestamp: str = Field(..., alias="endTimestamp")
     text: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class PanelTemplate(BaseModel):
     id: str
     title: str
-    template_type: str = Field(..., alias="templateType") # Example field name
+    # The server may not return 'templateType', so make it optional and match what the API uses (e.g., category)
+    template_type: Optional[str] = Field(None, alias="templateType") # If API uses category, also add:
+    category: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True, extra='allow')
 
 
 # Payload types for update methods
@@ -130,18 +135,14 @@ class UpdateDocumentPayload(BaseModel):
     notes_markdown: Optional[str] = Field(None, alias="notesMarkdown")
     # Pydantic models are strict by default; unknown fields cause errors unless extra='allow'
 
-    class Config:
-        populate_by_name = True
-        extra = 'allow' # Allows passing other arbitrary keys like in TS version
+    model_config = ConfigDict(populate_by_name=True, extra='allow')
 
 class UpdateDocumentPanelPayload(BaseModel):
     document_id: str = Field(..., alias="documentId")
     panel_id: str = Field(..., alias="panelId")
     content: Dict[str, Any]
 
-    class Config:
-        populate_by_name = True
-        extra = 'allow'
+    model_config = ConfigDict(populate_by_name=True)
 
 # Filters for get_documents and list_all_documents
 class GetDocumentsFilters(BaseModel):
@@ -149,6 +150,4 @@ class GetDocumentsFilters(BaseModel):
     cursor: Optional[str] = None
     limit: Optional[int] = None
 
-    class Config:
-        populate_by_name = True
-        extra = 'allow' # Allow additional filter keys if API supports them
+    model_config = ConfigDict(populate_by_name=True, extra='allow')

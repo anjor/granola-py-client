@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, AsyncGenerator, Tuple, cast, List
 import logging
 
-from pydantic import HttpUrl, BaseModel
+from pydantic import HttpUrl, BaseModel, ValidationError
 
 from .http_client import HttpClient
 from .types import (
@@ -13,9 +13,10 @@ from .types import (
     PanelTemplate, PeopleResponse, FeatureFlagsResponse, NotionIntegrationResponse,
     SubscriptionsResponse, UpdateDocumentPayload, UpdateDocumentPanelPayload,
     GetDocumentsFilters,
+    Person, FeatureFlag,
 )
 from .pagination import paginate, PaginatedResponse
-from .errors import GranolaAuthError
+from .errors import GranolaAuthError, GranolaValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ class GranolaClient:
         )
 
     async def get_panel_templates(self) -> List[PanelTemplate]:
-        # Similar to get_document_transcript, if it's a direct list
+        # The API returns a list.
         from pydantic import TypeAdapter
         ta = TypeAdapter(List[PanelTemplate])
         response = await self.http._request_raw("POST", "/v1/get-panel-templates", body_data={})
@@ -150,17 +151,28 @@ class GranolaClient:
             raise GranolaValidationError(str(e), validation_errors=e.errors(), response_text=err_text)
 
 
-    async def get_people(self) -> PeopleResponse:
-        return await self.http._request_model(
-            "POST", "/v1/get-people",
-            response_model=PeopleResponse, payload_dict={}
-        )
+    async def get_people(self) -> List['Person']:
+        # API returns a list, not an object with 'people' key.
+        from pydantic import TypeAdapter
+        ta = TypeAdapter(List[Person])
+        response = await self.http._request_raw("POST", "/v1/get-people", body_data={})
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(response.encoding or 'utf-8', errors='replace')
+            raise GranolaValidationError(str(e), validation_errors=e.errors(), response_text=err_text)
 
-    async def get_feature_flags(self) -> FeatureFlagsResponse:
-        return await self.http._request_model(
-            "POST", "/v1/get-feature-flags",
-            response_model=FeatureFlagsResponse, payload_dict={}
-        )
+    async def get_feature_flags(self) -> List['FeatureFlag']:
+        from pydantic import TypeAdapter
+        ta = TypeAdapter(List[FeatureFlag])
+        response = await self.http._request_raw("POST", "/v1/get-feature-flags", body_data={})
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(response.encoding or 'utf-8', errors='replace')
+            raise GranolaValidationError(str(e), validation_errors=e.errors(), response_text=err_text)
 
     async def get_notion_integration(self) -> NotionIntegrationResponse:
         return await self.http._request_model(
