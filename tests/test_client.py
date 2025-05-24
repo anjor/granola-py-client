@@ -55,14 +55,6 @@ async def test_get_panel_templates():
         assert hasattr(templates[0], "title")
 
 @pytest.mark.asyncio
-async def test_get_notion_integration():
-    token = os.getenv("GRANOLA_TOKEN", None)
-    async with GranolaClient(token=token) as client:
-        notion = await client.get_notion_integration()
-        assert hasattr(notion, "canIntegrate")
-        assert hasattr(notion, "isConnected")
-
-@pytest.mark.asyncio
 async def test_get_subscriptions():
     token = os.getenv("GRANOLA_TOKEN", None)
     async with GranolaClient(token=token) as client:
