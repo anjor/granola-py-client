@@ -99,6 +99,7 @@ class Person(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 
+
 # The API returns a list, not an object w/ a `people` key!
 PeopleResponse = List[Person]
 

@@ -13,9 +13,9 @@ from .types import (
     Document, DocumentsResponse,
     DocumentMetadata, TranscriptSegment, PanelTemplate,
     # Entity Models
-    Person, PeopleResponse,
+    Person,
     # Feature/Integration Models
-    FeatureFlagsResponse, NotionWorkspace, NotionIntegrationResponse,
+    FeatureFlagsResponse,
     # Subscription Models
     SubscriptionsResponse,
     # Payload Models
@@ -39,8 +39,7 @@ __all__ = [
     # Models
     "Document", "DocumentsResponse",
     "DocumentMetadata", "TranscriptSegment", "PanelTemplate", "Person",
-    "PeopleResponse", "FeatureFlagsResponse", "NotionWorkspace",
-    "NotionIntegrationResponse", "SubscriptionsResponse",
+    "FeatureFlagsResponse", "SubscriptionsResponse",
     "UpdateDocumentPayload", "UpdateDocumentPanelPayload", "GetDocumentsFilters",
     "PaginatedResponse",
     "__version__",
