@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.3.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: Version must be in format X.Y.Z (e.g., 0.3.0)"
+            exit 1
+          fi
+
+      - name: Update version in __init__.py
+        run: |
+          sed -i 's/__version__ = "[^"]*"/__version__ = "${{ inputs.version }}"/' granola_client/__init__.py
+
+      - name: Update version in pyproject.toml
+        run: |
+          sed -i 's/^version = "[^"]*"/version = "${{ inputs.version }}"/' pyproject.toml
+
+      - name: Verify version updates
+        run: |
+          echo "Checking version in __init__.py:"
+          grep '__version__' granola_client/__init__.py
+          echo "Checking version in pyproject.toml:"
+          grep '^version' pyproject.toml
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version bump
+        run: |
+          git add granola_client/__init__.py pyproject.toml
+          git commit -m "Bump version to ${{ inputs.version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          generate_release_notes: true
