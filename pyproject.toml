@@ -1,6 +1,6 @@
 [project]
 name = "granola-client"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Python client for the Granola API"
 authors = [
     { name = "Anjor Kanekar" },
