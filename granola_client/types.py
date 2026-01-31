@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, HttpUrl, ConfigDict, computed_field
 class HttpOpts(BaseModel):
     timeout: Optional[int] = 10000  # milliseconds
     retries: Optional[int] = 3
-    app_version: Optional[str] = Field(default="6.4.0", alias="appVersion")
+    app_version: Optional[str] = Field(default="6.531.0", alias="appVersion")
     client_type: Optional[str] = Field(
         default="electron", alias="clientType"
     )  # Consider "python-httpx"
@@ -17,11 +17,11 @@ class HttpOpts(BaseModel):
     client_architecture: Optional[str] = Field(
         default=None, alias="clientArchitecture"
     )  # Will be auto-detected
-    electron_version: Optional[str] = Field(default="33.4.5", alias="electronVersion")
+    electron_version: Optional[str] = Field(default="39.2.7", alias="electronVersion")
     chrome_version: Optional[str] = Field(
-        default="130.0.6723.191", alias="chromeVersion"
+        default="142.0.7444.235", alias="chromeVersion"
     )
-    node_version: Optional[str] = Field(default="20.18.3", alias="nodeVersion")
+    node_version: Optional[str] = Field(default="22.21.1", alias="nodeVersion")
     os_version: Optional[str] = Field(
         default=None, alias="osVersion"
     )  # Will be auto-detected

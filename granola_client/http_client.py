@@ -97,9 +97,17 @@ class HttpClient:
         await self._ensure_token()
         url = f"{self.base_url_str}{path}"
 
+        # Build User-Agent in standard browser format (matches official Granola Electron app)
+        os_name = "Macintosh; Intel Mac OS X" if self.client_platform == "darwin" else self.client_platform
+        os_version_ua = self.os_version.replace(".", "_") if self.client_platform == "darwin" else self.os_version
+        user_agent = (
+            f"Mozilla/5.0 ({os_name} {os_version_ua}) AppleWebKit/537.36 (KHTML, like Gecko) "
+            f"Granola/{self.app_version} Chrome/{self.chrome_version} Electron/{self.electron_version} Safari/537.36"
+        )
+
         headers: Dict[str, str] = {
             "X-App-Version": self.app_version,
-            "User-Agent": f"Granola/{self.app_version} Electron/{self.electron_version} Chrome/{self.chrome_version} Node/{self.node_version} ({self.client_platform} {self.os_version}; {self.os_build})".strip(),
+            "User-Agent": user_agent,
             "X-Client-Type": self.client_type,
             "X-Client-Platform": self.client_platform,
             "X-Client-Architecture": self.client_architecture,

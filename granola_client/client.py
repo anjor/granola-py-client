@@ -68,6 +68,17 @@ class GranolaClient:
                 raise GranolaAuthError(f"Token file not found: {supabase_file_path}")
 
             data = json.loads(supabase_file_path.read_text(encoding="utf-8"))
+
+            # Try WorkOS tokens first (newer auth), fall back to Cognito tokens
+            if "workos_tokens" in data:
+                workos_tokens = json.loads(data["workos_tokens"])
+                access = workos_tokens.get("access_token")
+                refresh = workos_tokens.get("refresh_token")
+                if access and refresh:
+                    logger.debug("Using WorkOS tokens for authentication")
+                    return access, refresh
+
+            # Fall back to Cognito tokens
             cognito_tokens = json.loads(data["cognito_tokens"])
             access, refresh = (
                 cognito_tokens["access_token"],
@@ -75,6 +86,7 @@ class GranolaClient:
             )
             if not access or not refresh:
                 raise GranolaAuthError("Access or refresh token missing.")
+            logger.debug("Using Cognito tokens for authentication")
             return access, refresh
         except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
             logger.error(f"Failed to get auth tokens: {e}", exc_info=True)
