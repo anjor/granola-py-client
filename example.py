@@ -16,7 +16,8 @@ async def main():
             print(f"\nFound {len(documents_response.docs)} documents:")
             for doc in documents_response.docs:
                 print(f"  - ID: {doc.document_id}, Title: {doc.title}")
-                print(doc)
+                transcript = await client.get_transcript(doc.document_id)
+                print(f"    Transcript: {transcript}")
         else:
             print("No documents found or response was empty.")
 
