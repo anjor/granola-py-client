@@ -27,9 +27,9 @@ from .types import (
     EnhancedGetDocumentsFilters,
     # New types for discovered endpoints
     UserInfo,
-    Workspace,
+    WorkspaceWithRole,
     WorkspaceMember,
-    CalendarEvent,
+    GoogleEventsResponse,
     CreateDocumentPayload,
     CreateDocumentResponse,
     DocumentAccessUser,
@@ -399,24 +399,20 @@ class GranolaClient:
 
     # ============ Workspaces ============
 
-    async def get_workspaces(self) -> List[Workspace]:
-        """Get all workspaces the user has access to."""
-        from pydantic import TypeAdapter
+    async def get_workspaces(self) -> List[WorkspaceWithRole]:
+        """Get all workspaces the user has access to.
 
-        ta = TypeAdapter(List[Workspace])
-        response = await self.http._request_raw(
-            "POST", "/v1/get-workspaces", body_data={}
+        Returns a list of WorkspaceWithRole objects containing workspace details and user's role.
+        """
+        from .types import WorkspacesResponse
+
+        response = await self.http._request_model(
+            "POST",
+            "/v1/get-workspaces",
+            response_model=WorkspacesResponse,
+            payload_dict={},
         )
-        response_content = await response.aread()
-        try:
-            return ta.validate_json(response_content)
-        except ValidationError as e:
-            err_text = response_content.decode(
-                response.encoding or "utf-8", errors="replace"
-            )
-            raise GranolaValidationError(
-                str(e), validation_errors=e.errors(), response_text=err_text
-            )
+        return response.workspaces
 
     async def get_workspace_members(self, workspace_id: str) -> List[WorkspaceMember]:
         """Get members of a workspace."""
@@ -445,16 +441,19 @@ class GranolaClient:
         self,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-    ) -> List[CalendarEvent]:
-        """Get Google Calendar events.
+    ) -> GoogleEventsResponse:
+        """Get Google Calendar events and calendars.
 
         Args:
             start_date: Optional ISO date string for start of range
             end_date: Optional ISO date string for end of range
+
+        Returns:
+            GoogleEventsResponse with calendars list and events list
         """
         from pydantic import TypeAdapter
 
-        ta = TypeAdapter(List[CalendarEvent])
+        ta = TypeAdapter(List[GoogleEventsResponse])
         payload: Dict[str, Any] = {}
         if start_date:
             payload["start_date"] = start_date
@@ -466,7 +465,12 @@ class GranolaClient:
         )
         response_content = await response.aread()
         try:
-            return ta.validate_json(response_content)
+            results = ta.validate_json(response_content)
+            # Return the first (and typically only) result
+            if results:
+                return results[0]
+            # Return empty response if no data
+            return GoogleEventsResponse(user_id="", calendars=[])
         except ValidationError as e:
             err_text = response_content.decode(
                 response.encoding or "utf-8", errors="replace"
@@ -652,11 +656,17 @@ class GranolaClient:
     ) -> List[SearchResult]:
         """Search documents using semantic embeddings.
 
+        Note: This endpoint may require specific subscription features or
+        document embeddings to be generated first.
+
         Args:
             query: Search query text
             limit: Maximum number of results
             workspace_id: Optional workspace to search within
             document_ids: Optional list of document IDs to search within
+
+        Raises:
+            GranolaAPIError: If search is not available (400 error)
         """
         from pydantic import TypeAdapter
 

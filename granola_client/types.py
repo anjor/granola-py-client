@@ -307,19 +307,37 @@ class WorkspaceMember(BaseModel):
 
 
 class Workspace(BaseModel):
-    id: str
-    name: str
+    workspace_id: str = Field(..., alias="workspace_id")
     slug: Optional[str] = None
-    description: Optional[str] = None
+    display_name: Optional[str] = Field(None, alias="display_name")
+    is_locked: Optional[bool] = Field(None, alias="is_locked")
     created_at: Optional[str] = Field(None, alias="created_at")
     updated_at: Optional[str] = Field(None, alias="updated_at")
     company_type: Optional[str] = Field(None, alias="company_type")
-    member_count: Optional[int] = Field(None, alias="member_count")
+    privacy_mode_enabled: Optional[bool] = Field(None, alias="privacy_mode_enabled")
+    logo_url: Optional[str] = Field(None, alias="logo_url")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    @property
+    def id(self) -> str:
+        """Alias for workspace_id for convenience."""
+        return self.workspace_id
+
+    @property
+    def name(self) -> str:
+        """Alias for display_name for convenience."""
+        return self.display_name or self.slug or self.workspace_id
+
+
+class WorkspaceWithRole(BaseModel):
+    workspace: Workspace
+    role: str
+    plan_type: Optional[str] = Field(None, alias="plan_type")
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class WorkspacesResponse(BaseModel):
-    workspaces: List[Workspace]
+    workspaces: List[WorkspaceWithRole]
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
@@ -338,20 +356,51 @@ class CalendarEventAttendee(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
+class CalendarInfo(BaseModel):
+    id: str
+    summary: Optional[str] = None
+    primary: Optional[bool] = None
+    selected: Optional[bool] = None
+    time_zone: Optional[str] = Field(None, alias="timeZone")
+    access_role: Optional[str] = Field(None, alias="accessRole")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
 class CalendarEvent(BaseModel):
     id: str
     title: Optional[str] = None
     summary: Optional[str] = None
     description: Optional[str] = None
-    start: Optional[str] = None
-    end: Optional[str] = None
-    start_time: Optional[str] = Field(None, alias="start_time")
-    end_time: Optional[str] = Field(None, alias="end_time")
-    calendar_id: Optional[str] = Field(None, alias="calendar_id")
+    start: Optional[Dict[str, Any]] = None  # Can be {dateTime: ..., timeZone: ...}
+    end: Optional[Dict[str, Any]] = None
+    calendar_id: Optional[str] = Field(None, alias="calendarId")
     attendees: Optional[List[CalendarEventAttendee]] = None
-    meeting_link: Optional[str] = Field(None, alias="meeting_link")
+    hangout_link: Optional[str] = Field(None, alias="hangoutLink")
+    html_link: Optional[str] = Field(None, alias="htmlLink")
     location: Optional[str] = None
-    all_day: Optional[bool] = Field(None, alias="allDay")
+    status: Optional[str] = None
+    organizer: Optional[Dict[str, Any]] = None
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    @property
+    def start_time(self) -> Optional[str]:
+        """Get start time as ISO string."""
+        if self.start:
+            return self.start.get("dateTime") or self.start.get("date")
+        return None
+
+    @property
+    def end_time(self) -> Optional[str]:
+        """Get end time as ISO string."""
+        if self.end:
+            return self.end.get("dateTime") or self.end.get("date")
+        return None
+
+
+class GoogleEventsResponse(BaseModel):
+    user_id: str = Field(..., alias="user_id")
+    calendars: List[CalendarInfo]
+    events: Optional[List[CalendarEvent]] = None
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
@@ -496,8 +545,10 @@ class SaveToNotionResponse(BaseModel):
 
 
 class SlackIntegrationResponse(BaseModel):
-    is_connected: bool = Field(..., alias="isConnected")
-    channels: Optional[List[Dict[str, Any]]] = None
+    can_integrate: bool = Field(..., alias="canIntegrate")
+    is_connected: bool = Field(default=False, alias="isConnected")
+    auth_url: Optional[str] = Field(None, alias="authUrl")
+    integration: Optional[Dict[str, Any]] = None
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
