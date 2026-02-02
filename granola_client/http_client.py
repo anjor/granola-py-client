@@ -243,7 +243,8 @@ class HttpClient:
 
     async def get_text(self, path: str) -> str:
         response = await self._request_raw("GET", path)
-        return await response.aread().then(lambda b: b.decode(response.encoding or 'utf-8'))
+        content = await response.aread()
+        return content.decode(response.encoding or 'utf-8')
 
 
     async def close(self) -> None:

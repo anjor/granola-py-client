@@ -277,3 +277,237 @@ class EnhancedGetDocumentsFilters(GetDocumentsFilters):
     show_organization: Optional[bool] = Field(None, alias="show_organization")
     document_ids: Optional[List[str]] = Field(None, alias="document_ids")
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ User Info ============
+
+
+class UserInfo(BaseModel):
+    id: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    avatar: Optional[str] = None
+    created_at: Optional[str] = Field(None, alias="created_at")
+    workspace_id: Optional[str] = Field(None, alias="workspace_id")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Workspaces ============
+
+
+class WorkspaceMember(BaseModel):
+    user_id: str = Field(..., alias="user_id")
+    name: Optional[str] = None
+    email: Optional[str] = None
+    avatar: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+    created_at: Optional[str] = Field(None, alias="created_at")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class Workspace(BaseModel):
+    id: str
+    name: str
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    created_at: Optional[str] = Field(None, alias="created_at")
+    updated_at: Optional[str] = Field(None, alias="updated_at")
+    company_type: Optional[str] = Field(None, alias="company_type")
+    member_count: Optional[int] = Field(None, alias="member_count")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class WorkspacesResponse(BaseModel):
+    workspaces: List[Workspace]
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class WorkspaceMembersResponse(BaseModel):
+    members: List[WorkspaceMember]
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Calendar Events ============
+
+
+class CalendarEventAttendee(BaseModel):
+    email: str
+    name: Optional[str] = None
+    response_status: Optional[str] = Field(None, alias="responseStatus")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class CalendarEvent(BaseModel):
+    id: str
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    start_time: Optional[str] = Field(None, alias="start_time")
+    end_time: Optional[str] = Field(None, alias="end_time")
+    calendar_id: Optional[str] = Field(None, alias="calendar_id")
+    attendees: Optional[List[CalendarEventAttendee]] = None
+    meeting_link: Optional[str] = Field(None, alias="meeting_link")
+    location: Optional[str] = None
+    all_day: Optional[bool] = Field(None, alias="allDay")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class CalendarEventsResponse(BaseModel):
+    events: List[CalendarEvent]
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Document Creation ============
+
+
+class CreateDocumentPayload(BaseModel):
+    title: Optional[str] = None
+    workspace_id: Optional[str] = Field(None, alias="workspace_id")
+    calendar_event_id: Optional[str] = Field(None, alias="calendar_event_id")
+    notes: Optional[Dict[str, Any]] = None
+    notes_plain: Optional[str] = Field(None, alias="notes_plain")
+    notes_markdown: Optional[str] = Field(None, alias="notes_markdown")
+    overview: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class CreateDocumentResponse(BaseModel):
+    document_id: str = Field(..., alias="document_id")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Document Deletion ============
+
+
+class DeleteDocumentPayload(BaseModel):
+    document_id: str = Field(..., alias="document_id")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# ============ Document Sharing ============
+
+
+class ShareDocumentPayload(BaseModel):
+    document_id: str = Field(..., alias="document_id")
+    user_emails: List[str] = Field(..., alias="user_emails")
+    role: Optional[str] = "viewer"  # viewer, editor, etc.
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UnshareDocumentPayload(BaseModel):
+    document_id: str = Field(..., alias="document_id")
+    user_emails: List[str] = Field(..., alias="user_emails")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DocumentAccessUser(BaseModel):
+    user_id: str = Field(..., alias="user_id")
+    email: str
+    name: Optional[str] = None
+    role: str
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class DocumentAccessResponse(BaseModel):
+    users: List[DocumentAccessUser]
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Folder Management ============
+
+
+class CreateFolderPayload(BaseModel):
+    title: str
+    description: Optional[str] = None
+    workspace_id: Optional[str] = Field(None, alias="workspace_id")
+    visibility: Optional[str] = "private"  # private, workspace, public
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CreateFolderResponse(BaseModel):
+    id: str
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class UpdateFolderPayload(BaseModel):
+    document_list_id: str = Field(..., alias="document_list_id")
+    title: Optional[str] = None
+    description: Optional[str] = None
+    visibility: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AddDocumentToFolderPayload(BaseModel):
+    document_list_id: str = Field(..., alias="document_list_id")
+    document_id: str = Field(..., alias="document_id")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RemoveDocumentFromFolderPayload(BaseModel):
+    document_list_id: str = Field(..., alias="document_list_id")
+    document_id: str = Field(..., alias="document_id")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# ============ Search ============
+
+
+class SearchQuery(BaseModel):
+    query: str
+    limit: Optional[int] = 10
+    workspace_id: Optional[str] = Field(None, alias="workspace_id")
+    document_ids: Optional[List[str]] = Field(None, alias="document_ids")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SearchResult(BaseModel):
+    document_id: str = Field(..., alias="document_id")
+    title: Optional[str] = None
+    snippet: Optional[str] = None
+    score: Optional[float] = None
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class SearchResponse(BaseModel):
+    results: List[SearchResult]
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Notion Integration ============
+
+
+class SaveToNotionPayload(BaseModel):
+    document_id: str = Field(..., alias="document_id")
+    workspace_id: Optional[str] = Field(None, alias="workspace_id")
+    parent_page_id: Optional[str] = Field(None, alias="parent_page_id")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SaveToNotionResponse(BaseModel):
+    notion_page_url: Optional[str] = Field(None, alias="notion_page_url")
+    success: bool
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+# ============ Slack Integration ============
+
+
+class SlackIntegrationResponse(BaseModel):
+    is_connected: bool = Field(..., alias="isConnected")
+    channels: Optional[List[Dict[str, Any]]] = None
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class PostSlackMessagePayload(BaseModel):
+    channel_id: str = Field(..., alias="channel_id")
+    document_id: str = Field(..., alias="document_id")
+    message: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SlackChannelsResponse(BaseModel):
+    channels: List[SlackChannel]
+    model_config = ConfigDict(populate_by_name=True, extra="allow")

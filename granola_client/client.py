@@ -1,7 +1,7 @@
 import json
 import platform
 from pathlib import Path
-from typing import Optional, AsyncGenerator, Tuple, cast, List
+from typing import Optional, AsyncGenerator, Tuple, cast, List, Dict, Any
 import logging
 
 from pydantic import HttpUrl, BaseModel, ValidationError
@@ -21,6 +21,23 @@ from .types import (
     GetDocumentsFilters,
     Person,
     FeatureFlag,
+    # Types for helper methods
+    DocumentSetResponse,
+    DocumentListsResponse,
+    EnhancedGetDocumentsFilters,
+    # New types for discovered endpoints
+    UserInfo,
+    Workspace,
+    WorkspaceMember,
+    CalendarEvent,
+    CreateDocumentPayload,
+    CreateDocumentResponse,
+    DocumentAccessUser,
+    CreateFolderResponse,
+    SearchResult,
+    SaveToNotionResponse,
+    SlackIntegrationResponse,
+    SlackChannel,
 )
 from .pagination import paginate, PaginatedResponse
 from .errors import GranolaAuthError, GranolaValidationError
@@ -278,10 +295,8 @@ class GranolaClient:
 
         return await self.http.get_text(f"/v1/check-for-update/{platform_path}")
 
-    async def get_document_set(self) -> "DocumentSetResponse":
+    async def get_document_set(self) -> DocumentSetResponse:
         """Get a lightweight index of all documents user has access to."""
-        from .types import DocumentSetResponse
-
         return await self.http._request_model(
             "POST",
             "/v1/get-document-set",
@@ -289,10 +304,8 @@ class GranolaClient:
             payload_dict={},
         )
 
-    async def get_document_lists(self) -> "DocumentListsResponse":
+    async def get_document_lists(self) -> DocumentListsResponse:
         """Get metadata for all shared folders/document lists."""
-        from .types import DocumentListsResponse
-
         return await self.http._request_model(
             "POST",
             "/v1/get-document-lists-metadata",
@@ -304,7 +317,7 @@ class GranolaClient:
         )
 
     async def get_documents_enhanced(
-        self, filters: "EnhancedGetDocumentsFilters"
+        self, filters: EnhancedGetDocumentsFilters
     ) -> DocumentsResponse:
         """Enhanced version of get_documents with support for shared folder features."""
         payload = filters.model_dump(by_alias=True, exclude_none=True)
@@ -317,8 +330,6 @@ class GranolaClient:
 
     async def get_documents_by_folder_id(self, folder_id: str) -> List[Document]:
         """Get all documents from a specific shared folder/document list by ID."""
-        from .types import EnhancedGetDocumentsFilters
-
         # Get folder metadata to find document IDs
         folders_response = await self.get_document_lists()
 
@@ -374,6 +385,383 @@ class GranolaClient:
         # Use the single matching folder
         folder_id, _ = matching_folders[0]
         return await self.get_documents_by_folder_id(folder_id)
+
+    # ============ User Info ============
+
+    async def get_user_info(self) -> UserInfo:
+        """Get information about the current authenticated user."""
+        return await self.http._request_model(
+            "POST",
+            "/v1/get-user-info",
+            response_model=UserInfo,
+            payload_dict={},
+        )
+
+    # ============ Workspaces ============
+
+    async def get_workspaces(self) -> List[Workspace]:
+        """Get all workspaces the user has access to."""
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(List[Workspace])
+        response = await self.http._request_raw(
+            "POST", "/v1/get-workspaces", body_data={}
+        )
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            raise GranolaValidationError(
+                str(e), validation_errors=e.errors(), response_text=err_text
+            )
+
+    async def get_workspace_members(self, workspace_id: str) -> List[WorkspaceMember]:
+        """Get members of a workspace."""
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(List[WorkspaceMember])
+        response = await self.http._request_raw(
+            "POST",
+            "/v1/get-workspace-members",
+            body_data={"workspace_id": workspace_id},
+        )
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            raise GranolaValidationError(
+                str(e), validation_errors=e.errors(), response_text=err_text
+            )
+
+    # ============ Calendar Events ============
+
+    async def get_google_events(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> List[CalendarEvent]:
+        """Get Google Calendar events.
+
+        Args:
+            start_date: Optional ISO date string for start of range
+            end_date: Optional ISO date string for end of range
+        """
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(List[CalendarEvent])
+        payload: Dict[str, Any] = {}
+        if start_date:
+            payload["start_date"] = start_date
+        if end_date:
+            payload["end_date"] = end_date
+
+        response = await self.http._request_raw(
+            "POST", "/v1/get-google-events", body_data=payload
+        )
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            raise GranolaValidationError(
+                str(e), validation_errors=e.errors(), response_text=err_text
+            )
+
+    # ============ Document CRUD ============
+
+    async def create_document(
+        self, payload: CreateDocumentPayload
+    ) -> CreateDocumentResponse:
+        """Create a new document."""
+        return await self.http._request_model(
+            "POST",
+            "/v1/create-document",
+            response_model=CreateDocumentResponse,
+            payload_model=payload,
+        )
+
+    async def delete_document(self, document_id: str) -> None:
+        """Permanently delete a document (hard delete)."""
+        await self.http._request_void(
+            "POST",
+            "/v1/hard-delete-document",
+            payload_dict={"document_id": document_id},
+        )
+
+    # ============ Document Sharing ============
+
+    async def share_document(
+        self, document_id: str, user_emails: List[str], role: str = "viewer"
+    ) -> None:
+        """Share a document with users by email.
+
+        Args:
+            document_id: The document to share
+            user_emails: List of email addresses to share with
+            role: Permission level (viewer, editor, etc.)
+        """
+        await self.http._request_void(
+            "POST",
+            "/v1/add-users-to-document",
+            payload_dict={
+                "document_id": document_id,
+                "user_emails": user_emails,
+                "role": role,
+            },
+        )
+
+    async def unshare_document(self, document_id: str, user_emails: List[str]) -> None:
+        """Remove users' access to a document.
+
+        Args:
+            document_id: The document to unshare
+            user_emails: List of email addresses to remove
+        """
+        await self.http._request_void(
+            "POST",
+            "/v1/remove-users-from-document",
+            payload_dict={
+                "document_id": document_id,
+                "user_emails": user_emails,
+            },
+        )
+
+    async def get_document_collaborators(
+        self, document_id: str
+    ) -> List[DocumentAccessUser]:
+        """Get users who have access to a document."""
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(List[DocumentAccessUser])
+        response = await self.http._request_raw(
+            "POST",
+            "/v1/get-users-with-access",
+            body_data={"document_id": document_id},
+        )
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            raise GranolaValidationError(
+                str(e), validation_errors=e.errors(), response_text=err_text
+            )
+
+    # ============ Folder Management ============
+
+    async def create_folder(
+        self,
+        title: str,
+        description: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        visibility: str = "private",
+    ) -> CreateFolderResponse:
+        """Create a new shared folder (document list).
+
+        Args:
+            title: Name of the folder
+            description: Optional description
+            workspace_id: Optional workspace to create in
+            visibility: 'private', 'workspace', or 'public'
+        """
+        payload: Dict[str, Any] = {"title": title, "visibility": visibility}
+        if description:
+            payload["description"] = description
+        if workspace_id:
+            payload["workspace_id"] = workspace_id
+
+        return await self.http._request_model(
+            "POST",
+            "/v1/create-document-list-v2",
+            response_model=CreateFolderResponse,
+            payload_dict=payload,
+        )
+
+    async def delete_folder(self, folder_id: str) -> None:
+        """Delete a shared folder (document list)."""
+        await self.http._request_void(
+            "POST",
+            "/v1/delete-document-list-v2",
+            payload_dict={"document_list_id": folder_id},
+        )
+
+    async def update_folder(
+        self,
+        folder_id: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        visibility: Optional[str] = None,
+    ) -> None:
+        """Update a folder's metadata."""
+        payload: Dict[str, Any] = {"document_list_id": folder_id}
+        if title:
+            payload["title"] = title
+        if description:
+            payload["description"] = description
+        if visibility:
+            payload["visibility"] = visibility
+
+        await self.http._request_void(
+            "POST", "/v1/update-document-list", payload_dict=payload
+        )
+
+    async def add_document_to_folder(
+        self, folder_id: str, document_id: str
+    ) -> None:
+        """Add a document to a shared folder."""
+        await self.http._request_void(
+            "POST",
+            "/v1/add-document-to-list",
+            payload_dict={
+                "document_list_id": folder_id,
+                "document_id": document_id,
+            },
+        )
+
+    async def remove_document_from_folder(
+        self, folder_id: str, document_id: str
+    ) -> None:
+        """Remove a document from a shared folder."""
+        await self.http._request_void(
+            "POST",
+            "/v1/remove-document-from-list",
+            payload_dict={
+                "document_list_id": folder_id,
+                "document_id": document_id,
+            },
+        )
+
+    # ============ Search ============
+
+    async def search(
+        self,
+        query: str,
+        limit: int = 10,
+        workspace_id: Optional[str] = None,
+        document_ids: Optional[List[str]] = None,
+    ) -> List[SearchResult]:
+        """Search documents using semantic embeddings.
+
+        Args:
+            query: Search query text
+            limit: Maximum number of results
+            workspace_id: Optional workspace to search within
+            document_ids: Optional list of document IDs to search within
+        """
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(List[SearchResult])
+        payload: Dict[str, Any] = {"query": query, "limit": limit}
+        if workspace_id:
+            payload["workspace_id"] = workspace_id
+        if document_ids:
+            payload["document_ids"] = document_ids
+
+        response = await self.http._request_raw(
+            "POST", "/v1/search-embeddings", body_data=payload
+        )
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            raise GranolaValidationError(
+                str(e), validation_errors=e.errors(), response_text=err_text
+            )
+
+    # ============ Notion Integration ============
+
+    async def save_to_notion(
+        self,
+        document_id: str,
+        workspace_id: Optional[str] = None,
+        parent_page_id: Optional[str] = None,
+    ) -> SaveToNotionResponse:
+        """Export a document to Notion.
+
+        Args:
+            document_id: The document to export
+            workspace_id: Optional Notion workspace ID
+            parent_page_id: Optional parent page in Notion
+        """
+        payload: Dict[str, Any] = {"document_id": document_id}
+        if workspace_id:
+            payload["workspace_id"] = workspace_id
+        if parent_page_id:
+            payload["parent_page_id"] = parent_page_id
+
+        return await self.http._request_model(
+            "POST",
+            "/v1/save-to-notion",
+            response_model=SaveToNotionResponse,
+            payload_dict=payload,
+        )
+
+    # ============ Slack Integration ============
+
+    async def get_slack_integration(self) -> SlackIntegrationResponse:
+        """Get Slack integration status and channels."""
+        return await self.http._request_model(
+            "POST",
+            "/v1/get-slack-integration",
+            response_model=SlackIntegrationResponse,
+            payload_dict={},
+        )
+
+    async def list_slack_channels(self) -> List[SlackChannel]:
+        """List available Slack channels."""
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(List[SlackChannel])
+        response = await self.http._request_raw(
+            "POST", "/v1/list-slack-channels", body_data={}
+        )
+        response_content = await response.aread()
+        try:
+            return ta.validate_json(response_content)
+        except ValidationError as e:
+            err_text = response_content.decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            raise GranolaValidationError(
+                str(e), validation_errors=e.errors(), response_text=err_text
+            )
+
+    async def post_to_slack(
+        self,
+        channel_id: str,
+        document_id: str,
+        message: Optional[str] = None,
+    ) -> None:
+        """Post a document to a Slack channel.
+
+        Args:
+            channel_id: Slack channel ID
+            document_id: Document to share
+            message: Optional message to include
+        """
+        payload: Dict[str, Any] = {
+            "channel_id": channel_id,
+            "document_id": document_id,
+        }
+        if message:
+            payload["message"] = message
+
+        await self.http._request_void(
+            "POST", "/v1/post-slack-message", payload_dict=payload
+        )
 
     async def close(self) -> None:
         await self.http.close()

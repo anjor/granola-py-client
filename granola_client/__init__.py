@@ -22,7 +22,19 @@ from .types import (
     UpdateDocumentPayload, UpdateDocumentPanelPayload,
     # Filter Models
     GetDocumentsFilters,
-    # Add other important Pydantic models you want to be easily accessible
+    # New models from API discovery
+    UserInfo,
+    Workspace, WorkspacesResponse, WorkspaceMember, WorkspaceMembersResponse,
+    CalendarEvent, CalendarEventsResponse,
+    CreateDocumentPayload, CreateDocumentResponse,
+    DeleteDocumentPayload,
+    ShareDocumentPayload, UnshareDocumentPayload,
+    DocumentAccessUser, DocumentAccessResponse,
+    CreateFolderPayload, CreateFolderResponse, UpdateFolderPayload,
+    AddDocumentToFolderPayload, RemoveDocumentFromFolderPayload,
+    SearchQuery, SearchResult, SearchResponse,
+    SaveToNotionPayload, SaveToNotionResponse,
+    SlackIntegrationResponse, PostSlackMessagePayload, SlackChannel, SlackChannelsResponse,
 )
 from .pagination import PaginatedResponse # This is also a Pydantic model now
 
@@ -42,6 +54,19 @@ __all__ = [
     "FeatureFlagsResponse", "SubscriptionsResponse",
     "UpdateDocumentPayload", "UpdateDocumentPanelPayload", "GetDocumentsFilters",
     "PaginatedResponse",
+    # New exports from API discovery
+    "UserInfo",
+    "Workspace", "WorkspacesResponse", "WorkspaceMember", "WorkspaceMembersResponse",
+    "CalendarEvent", "CalendarEventsResponse",
+    "CreateDocumentPayload", "CreateDocumentResponse",
+    "DeleteDocumentPayload",
+    "ShareDocumentPayload", "UnshareDocumentPayload",
+    "DocumentAccessUser", "DocumentAccessResponse",
+    "CreateFolderPayload", "CreateFolderResponse", "UpdateFolderPayload",
+    "AddDocumentToFolderPayload", "RemoveDocumentFromFolderPayload",
+    "SearchQuery", "SearchResult", "SearchResponse",
+    "SaveToNotionPayload", "SaveToNotionResponse",
+    "SlackIntegrationResponse", "PostSlackMessagePayload", "SlackChannel", "SlackChannelsResponse",
     "__version__",
 ]
 
