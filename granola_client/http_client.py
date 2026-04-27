@@ -85,6 +85,14 @@ class HttpClient:
     def set_token_provider(self, provider: Callable[[], Awaitable[str]]) -> None:
         self._token_provider = provider
 
+    def invalidate_token(self) -> None:
+        """Drop the cached bearer token so the next request refetches via the provider.
+
+        Called when the server returns 401 mid-session — typically because a
+        short-lived access token expired between requests.
+        """
+        self._token = None
+
     async def _ensure_token(self) -> None:
         if self._token:
             return
@@ -110,16 +118,10 @@ class HttpClient:
             except ValueError: pass
         return 0.25 * (2 ** attempt)
 
-    async def _request_raw(
-        self, method: str, path: str, body_data: Optional[Union[Dict[str, Any], List[Any], str]] = None
-    ) -> httpx.Response:
-        await self._ensure_token()
-        url = f"{self.base_url_str}{path}"
-
-        # Header schema mirrors getClientHeaders() in the Granola Electron app
-        # (dist-electron/main/index.js): X-Client-Version + X-Granola-* identity
-        # headers. The previous X-App-Version / X-Client-Type / X-Client-Id schema
-        # is no longer accepted by api.granola.ai.
+    def _build_headers(self, body_data: Optional[Union[Dict[str, Any], List[Any], str]]) -> Dict[str, str]:
+        """Compose request headers — identity (X-Client-Version, X-Granola-*),
+        Authorization, and Content-Type/Accept based on body shape. Built per
+        request so a refreshed token gets picked up after a 401."""
         headers: Dict[str, str] = {
             "X-Client-Version": self.app_version,
             "X-Granola-Platform": self.client_platform,
@@ -130,20 +132,27 @@ class HttpClient:
         headers.update(self.client_headers)
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
-
-        is_json_body = isinstance(body_data, (dict, list))
-        if is_json_body:
+        if isinstance(body_data, (dict, list)):
             headers["Content-Type"] = "application/json"
-            headers["Accept"] = "application/json" # Usually expect JSON back for JSON posts
-        elif isinstance(body_data, str): # Assuming raw text body
-            headers["Content-Type"] = "text/plain" # Or other appropriate type
-            # Accept might still be JSON or text depending on endpoint
-        else: # No body
-             headers["Accept"] = "application/json" # Default accept for GET or bodiless POST
+            headers["Accept"] = "application/json"
+        elif isinstance(body_data, str):
+            headers["Content-Type"] = "text/plain"
+        else:
+            headers["Accept"] = "application/json"
+        return headers
 
+    async def _request_raw(
+        self, method: str, path: str,
+        body_data: Optional[Union[Dict[str, Any], List[Any], str]] = None,
+        _allow_token_refresh: bool = True,
+    ) -> httpx.Response:
+        await self._ensure_token()
+        url = f"{self.base_url_str}{path}"
+        is_json_body = isinstance(body_data, (dict, list))
         last_error: Optional[Exception] = None
 
         for attempt in range(self.retries + 1):
+            headers = self._build_headers(body_data)
             try:
                 logger.debug(f"Request: {method} {url}, Attempt: {attempt + 1}/{self.retries + 1}")
                 if body_data: logger.debug(f"Request Body: {json.dumps(body_data) if is_json_body else str(body_data)[:200]}")
@@ -155,6 +164,21 @@ class HttpClient:
                 )
 
                 logger.debug(f"Response: {res.status_code}, Headers: {res.headers}")
+
+                if (
+                    res.status_code == 401
+                    and _allow_token_refresh
+                    and self._token_provider is not None
+                ):
+                    logger.info(
+                        "Got 401 on %s %s; invalidating token and retrying once after refresh.",
+                        method, path,
+                    )
+                    await res.aread()
+                    self.invalidate_token()
+                    return await self._request_raw(
+                        method, path, body_data=body_data, _allow_token_refresh=False
+                    )
 
                 if res.status_code == 429:
                     retry_after = res.headers.get("Retry-After")
