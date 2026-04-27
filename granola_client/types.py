@@ -7,25 +7,16 @@ from pydantic import BaseModel, Field, HttpUrl, ConfigDict, computed_field
 class HttpOpts(BaseModel):
     timeout: Optional[int] = 10000  # milliseconds
     retries: Optional[int] = 3
-    app_version: Optional[str] = Field(default="6.531.0", alias="appVersion")
-    client_type: Optional[str] = Field(
-        default="electron", alias="clientType"
-    )  # Consider "python-httpx"
-    client_platform: Optional[str] = Field(
-        default=None, alias="clientPlatform"
-    )  # Will be auto-detected
-    client_architecture: Optional[str] = Field(
-        default=None, alias="clientArchitecture"
-    )  # Will be auto-detected
-    electron_version: Optional[str] = Field(default="39.2.7", alias="electronVersion")
-    chrome_version: Optional[str] = Field(
-        default="142.0.7444.235", alias="chromeVersion"
-    )
-    node_version: Optional[str] = Field(default="22.21.1", alias="nodeVersion")
-    os_version: Optional[str] = Field(
-        default=None, alias="osVersion"
-    )  # Will be auto-detected
-    os_build: Optional[str] = Field(default="", alias="osBuild")
+    # If left None, HttpClient picks up the locally-installed Granola.app version
+    # (macOS) or falls back to a bundled constant. Override only if you need to
+    # pin a specific value.
+    app_version: Optional[str] = Field(default=None, alias="appVersion")
+    # If left None, the platform / os_version are filled in from the host (Darwin
+    # → macOS, etc.) to match what the desktop app sends.
+    client_platform: Optional[str] = Field(default=None, alias="clientPlatform")
+    os_version: Optional[str] = Field(default=None, alias="osVersion")
+    # Extra headers to merge in. Useful as an escape hatch if Granola adds a new
+    # required header before this library catches up.
     client_headers: Optional[Dict[str, str]] = Field(
         default_factory=dict, alias="clientHeaders"
     )

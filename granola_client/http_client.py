@@ -1,17 +1,21 @@
 import asyncio
 import httpx
-import platform
 import json # For logging bodies, Pydantic handles main ser/de
 from typing import Optional, Callable, Awaitable, TypeVar, Dict, Any, Union, Type, cast, List
 import logging
 
 from pydantic import BaseModel, ValidationError, HttpUrl
 
+from . import _device
 from .types import HttpOpts # HttpOpts is now a Pydantic model
 from .errors import (
     GranolaAPIError, GranolaAuthError, GranolaRateLimitError,
     GranolaTimeoutError, GranolaUnsupportedClientError, GranolaValidationError
 )
+
+# Fallback used only when we can't read the locally-installed Granola.app version.
+# Bump alongside the live desktop app when this library has rotted.
+_DEFAULT_APP_VERSION = "7.162.1"
 
 logger = logging.getLogger(__name__)
 
@@ -50,35 +54,25 @@ class HttpClient:
         base_url: Union[str, HttpUrl] = "https://api.granola.ai", # Default from ClientOpts
         opts: Optional[HttpOpts] = None, # HttpOpts is Pydantic model
     ):
-        # If opts is None, create a default HttpOpts instance
-        # If opts is a dict, Pydantic will parse it
         parsed_opts = HttpOpts.model_validate(opts if opts is not None else {})
 
         self._token: Optional[str] = token
-        self.base_url_str: str = str(base_url).rstrip("/") # base_url from ClientOpts is HttpUrl
+        self.base_url_str: str = str(base_url).rstrip("/")
         self.timeout_ms: int = cast(int, parsed_opts.timeout)
         self.retries: int = cast(int, parsed_opts.retries)
 
-        self.app_version: str = cast(str, parsed_opts.app_version)
-        self.client_type: str = cast(str, parsed_opts.client_type)
+        # Identity headers — must mirror what the live Granola Electron app sends,
+        # because the API gates on them and returns "Unsupported client" otherwise.
+        self.app_version: str = (
+            parsed_opts.app_version
+            or _device.get_installed_granola_version()
+            or _DEFAULT_APP_VERSION
+        )
+        self.client_platform: str = parsed_opts.client_platform or _device.get_platform_label()
+        self.os_version: str = parsed_opts.os_version or _device.get_os_version()
+        self.device_id: Optional[str] = _device.get_hashed_device_id()
 
-        self.client_platform: str = parsed_opts.client_platform or platform.system().lower()
-        self.client_architecture: str = parsed_opts.client_architecture or platform.machine().lower()
-        self.electron_version: str = cast(str, parsed_opts.electron_version)
-        self.chrome_version: str = cast(str, parsed_opts.chrome_version)
-        self.node_version: str = cast(str, parsed_opts.node_version)
-
-        os_ver = platform.release()
-        if self.client_platform == "darwin":
-            os_ver = platform.mac_ver()[0]
-        elif self.client_platform == "win32": # platform.system() returns 'Windows'
-            self.client_platform = "windows" # align with common usage
-            os_ver = platform.win32_ver()[0]
-
-        self.os_version: str = parsed_opts.os_version or os_ver
-        self.os_build: str = parsed_opts.os_build or "" # Still hard to get reliably
-
-        self.client_headers: Dict[str, str] = cast(Dict[str,str], parsed_opts.client_headers)
+        self.client_headers: Dict[str, str] = cast(Dict[str, str], parsed_opts.client_headers or {})
 
         self._token_provider: Optional[Callable[[], Awaitable[str]]] = None
         self._token_fetch_lock = asyncio.Lock()
@@ -122,23 +116,18 @@ class HttpClient:
         await self._ensure_token()
         url = f"{self.base_url_str}{path}"
 
-        # Build User-Agent in standard browser format (matches official Granola Electron app)
-        os_name = "Macintosh; Intel Mac OS X" if self.client_platform == "darwin" else self.client_platform
-        os_version_ua = self.os_version.replace(".", "_") if self.client_platform == "darwin" else self.os_version
-        user_agent = (
-            f"Mozilla/5.0 ({os_name} {os_version_ua}) AppleWebKit/537.36 (KHTML, like Gecko) "
-            f"Granola/{self.app_version} Chrome/{self.chrome_version} Electron/{self.electron_version} Safari/537.36"
-        )
-
+        # Header schema mirrors getClientHeaders() in the Granola Electron app
+        # (dist-electron/main/index.js): X-Client-Version + X-Granola-* identity
+        # headers. The previous X-App-Version / X-Client-Type / X-Client-Id schema
+        # is no longer accepted by api.granola.ai.
         headers: Dict[str, str] = {
-            "X-App-Version": self.app_version,
-            "User-Agent": user_agent,
-            "X-Client-Type": self.client_type,
-            "X-Client-Platform": self.client_platform,
-            "X-Client-Architecture": self.client_architecture,
-            "X-Client-Id": f"granola-{self.client_type}-{self.app_version}",
-            **self.client_headers,
+            "X-Client-Version": self.app_version,
+            "X-Granola-Platform": self.client_platform,
+            "X-Granola-Os-Version": self.os_version,
         }
+        if self.device_id:
+            headers["X-Granola-Device-Id"] = self.device_id
+        headers.update(self.client_headers)
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
 
