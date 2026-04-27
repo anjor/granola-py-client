@@ -219,6 +219,11 @@ class HttpClient:
                 logger.warning(f"Request error on attempt {attempt + 1} for {url}. Error: {e}")
                 if attempt < self.retries: await asyncio.sleep(self._get_backoff_delay(attempt)); continue
                 raise last_error
+            except GranolaAPIError:
+                # Already a typed error (e.g. from a nested refresh-and-retry call,
+                # or surfaced by raise_for_status above) — propagate without wrapping
+                # so callers keep status_code / response_text on the original.
+                raise
             except Exception as e:
                 last_error = GranolaAPIError(f"An unexpected error occurred: {e}")
                 logger.error(f"Unexpected error: {e}", exc_info=True); raise last_error
