@@ -4,7 +4,7 @@ __version__ = "0.3.0"
 from .client import GranolaClient
 from .errors import (
     GranolaAPIError, GranolaAuthError, GranolaRateLimitError,
-    GranolaTimeoutError, GranolaValidationError
+    GranolaTimeoutError, GranolaUnsupportedClientError, GranolaValidationError
 )
 from .types import (
     # Client/HTTP Options
@@ -45,6 +45,7 @@ __all__ = [
     "GranolaAuthError",
     "GranolaRateLimitError",
     "GranolaTimeoutError",
+    "GranolaUnsupportedClientError",
     "GranolaValidationError",
     # Options
     "ClientOpts", "HttpOpts",

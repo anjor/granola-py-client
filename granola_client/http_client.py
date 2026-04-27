@@ -10,13 +10,38 @@ from pydantic import BaseModel, ValidationError, HttpUrl
 from .types import HttpOpts # HttpOpts is now a Pydantic model
 from .errors import (
     GranolaAPIError, GranolaAuthError, GranolaRateLimitError,
-    GranolaTimeoutError, GranolaValidationError
+    GranolaTimeoutError, GranolaUnsupportedClientError, GranolaValidationError
 )
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel) # Response model type
 P = TypeVar('P', bound=BaseModel) # Payload model type
+
+
+def _check_known_error_envelope(response_content: bytes) -> None:
+    """Raise a typed error if the response is a 200-with-error-shape envelope.
+
+    Granola sometimes returns HTTP 200 with bodies like {"message": "Unsupported client"}
+    instead of a 4xx. Without this check, pydantic raises a confusing validation error
+    about missing fields and hides the real cause.
+    """
+    if not response_content:
+        return
+    try:
+        body = json.loads(response_content)
+    except (json.JSONDecodeError, ValueError):
+        return
+    if not isinstance(body, dict):
+        return
+    keys = set(body.keys())
+    if keys != {"message"}:
+        return
+    message = body.get("message")
+    if not isinstance(message, str):
+        return
+    if message == "Unsupported client":
+        raise GranolaUnsupportedClientError(response_text=message)
 
 class HttpClient:
     def __init__(
@@ -203,16 +228,11 @@ class HttpClient:
         response = await self._request_raw(method, path, body_data=body_to_send)
 
         try:
-            # Ensure we read the content before trying to parse, especially if streamed.
-            # For httpx, .json() handles this.
-            # We use model_validate_json for Pydantic.
-            response_content = await response.aread() # Read content bytes
-            if not response_content: # Handle empty response if model allows (e.g. Optional fields)
-                # This case is tricky. If response_model expects data, empty content is an error.
-                # If response_model can be valid with all defaults / Optionals, it might pass.
-                # Pydantic will raise ValidationError if required fields are missing.
+            response_content = await response.aread()
+            if not response_content:
                 logger.warning(f"Empty response content received for {method} {path}")
 
+            _check_known_error_envelope(response_content)
             return response_model.model_validate_json(response_content)
         except ValidationError as e:
             err_text = response_content.decode(response.encoding or 'utf-8', errors='replace') if response_content else "(empty response)"
@@ -235,10 +255,9 @@ class HttpClient:
             body_to_send = payload_dict
 
         response = await self._request_raw(method, path, body_data=body_to_send)
-        # For void methods, we typically expect 204 No Content or 200/201 with empty/ignorable body.
-        # raise_for_status() in _request_raw already checks for >=400 errors.
-        # We might want to consume the response body to free resources, though httpx might do this.
-        await response.aread()
+        # raise_for_status() in _request_raw covers 4xx/5xx; check the body for the
+        # 200-with-error envelope Granola uses for "Unsupported client".
+        _check_known_error_envelope(await response.aread())
         return None
 
     async def get_text(self, path: str) -> str:
