@@ -38,3 +38,17 @@ class GranolaValidationError(GranolaAPIError):
 
     def __str__(self):
         return f"{super().__str__()} (Details: {self.validation_errors})"
+
+class GranolaUnsupportedClientError(GranolaAPIError):
+    """The Granola server rejected the request as coming from an unsupported client.
+
+    This happens when the server-side gate on client identity headers (X-Client-Version,
+    X-Granola-Platform, etc.) does not accept the values this library is sending —
+    typically because the bundled defaults have rotted relative to the live Granola app.
+    The server returns HTTP 200 with body {"message": "Unsupported client"} rather than a
+    4xx, which is why the failure surfaces here as a dedicated error instead of via
+    raise_for_status.
+    """
+
+    def __init__(self, message: str = "Granola server rejected this client as unsupported.", response_text: str | None = None):
+        super().__init__(message, status_code=200, response_text=response_text)

@@ -1,5 +1,6 @@
 import json
 import platform
+import time
 from pathlib import Path
 from typing import Optional, AsyncGenerator, Tuple, cast, List, Dict, Any
 import logging
@@ -49,17 +50,19 @@ class GranolaClient:
     http: HttpClient
 
     def __init__(self, token: Optional[str] = None, opts: Optional[ClientOpts] = None):
-        # opts can be a dict or ClientOpts instance. Pydantic handles validation.
-        # If opts is None, ClientOpts() provides defaults.
         client_options = ClientOpts.model_validate(opts if opts is not None else {})
 
         self.http = HttpClient(
             token=token,
-            base_url=cast(
-                HttpUrl, client_options.base_url
-            ),  # base_url is HttpUrl from ClientOpts
-            opts=client_options,  # Pass the validated Pydantic model
+            base_url=cast(HttpUrl, client_options.base_url),
+            opts=client_options,
         )
+
+        # In-memory cache of the WorkOS token bundle (access + refresh + expires_in
+        # + obtained_at). Lets us refresh on expiry without re-reading the file
+        # each call, and without writing back to the desktop app's supabase.json
+        # (which would race the live app's own refresh).
+        self._workos_tokens: Optional[Dict[str, Any]] = None
 
         if not token:
             if platform.system() == "Darwin":
@@ -70,11 +73,91 @@ class GranolaClient:
                 )
 
     async def _provide_auth_token_macos(self) -> str:
-        tokens = await GranolaClient.get_auth_tokens()
-        return tokens[0]
+        if self._workos_tokens is None:
+            self._workos_tokens = self._read_local_workos_tokens()
+        if self._is_workos_token_expiring(self._workos_tokens):
+            logger.info("WorkOS access token expired or expiring; refreshing.")
+            try:
+                self._workos_tokens = await self._refresh_workos_tokens(
+                    self._workos_tokens["refresh_token"]
+                )
+            except Exception:
+                # Drop the cache so a follow-up attempt re-reads from disk in case
+                # the desktop app refreshed in the meantime.
+                self._workos_tokens = None
+                raise
+        return self._workos_tokens["access_token"]
+
+    @staticmethod
+    def _is_workos_token_expiring(tokens: Dict[str, Any], leeway_s: int = 60) -> bool:
+        obtained_at_ms = tokens.get("obtained_at")
+        expires_in_s = tokens.get("expires_in")
+        if not isinstance(obtained_at_ms, (int, float)) or not isinstance(expires_in_s, (int, float)):
+            return True
+        expires_at_ms = obtained_at_ms + expires_in_s * 1000
+        return time.time() * 1000 + leeway_s * 1000 >= expires_at_ms
+
+    @staticmethod
+    def _read_local_workos_tokens() -> Dict[str, Any]:
+        if platform.system() != "Darwin":
+            raise GranolaAuthError("Automatic token extraction is macOS only.")
+        path = Path.home() / "Library/Application Support/Granola/supabase.json"
+        if not path.exists():
+            raise GranolaAuthError(
+                f"Granola token file not found: {path}. Open the desktop app to sign in."
+            )
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise GranolaAuthError(f"Failed to parse {path}: {e}") from e
+        if "workos_tokens" not in data:
+            raise GranolaAuthError(
+                "No workos_tokens in Granola supabase.json. Open the desktop app to sign in."
+            )
+        try:
+            tokens = json.loads(data["workos_tokens"])
+        except json.JSONDecodeError as e:
+            raise GranolaAuthError(f"Failed to parse workos_tokens: {e}") from e
+        if not isinstance(tokens, dict) or not tokens.get("access_token") or not tokens.get("refresh_token"):
+            raise GranolaAuthError("workos_tokens is missing access_token or refresh_token.")
+        return tokens
+
+    async def _refresh_workos_tokens(self, refresh_token: str) -> Dict[str, Any]:
+        # Suspend the auto-token machinery while we hit the refresh endpoint.
+        # The refresh call doesn't take Authorization, and we'd otherwise recurse
+        # through _ensure_token → provider → refresh.
+        prev_provider = self.http._token_provider
+        prev_token = self.http._token
+        self.http._token_provider = None
+        self.http._token = None
+        try:
+            response = await self.http._request_raw(
+                "POST",
+                "/v1/refresh-access-token",
+                body_data={"refresh_token": refresh_token},
+                _allow_token_refresh=False,
+            )
+            body_bytes = await response.aread()
+        finally:
+            self.http._token_provider = prev_provider
+            self.http._token = prev_token
+
+        try:
+            new_tokens = json.loads(body_bytes.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            raise GranolaAuthError(f"Refresh response was not JSON: {e}") from e
+        if not isinstance(new_tokens, dict) or not new_tokens.get("access_token"):
+            raise GranolaAuthError(f"Refresh did not return an access_token: {new_tokens}")
+        new_tokens["obtained_at"] = int(time.time() * 1000)
+        return new_tokens
 
     @staticmethod
     async def get_auth_tokens() -> Tuple[str, str]:
+        """Read (access_token, refresh_token) from the local Granola desktop app store.
+
+        Returns the values currently on disk; does not refresh. Prefers WorkOS
+        tokens over the legacy Cognito ones.
+        """
         if platform.system() != "Darwin":
             raise GranolaAuthError("Automatic token extraction is macOS only.")
         try:
@@ -86,16 +169,13 @@ class GranolaClient:
 
             data = json.loads(supabase_file_path.read_text(encoding="utf-8"))
 
-            # Try WorkOS tokens first (newer auth), fall back to Cognito tokens
             if "workos_tokens" in data:
                 workos_tokens = json.loads(data["workos_tokens"])
                 access = workos_tokens.get("access_token")
                 refresh = workos_tokens.get("refresh_token")
                 if access and refresh:
-                    logger.debug("Using WorkOS tokens for authentication")
                     return access, refresh
 
-            # Fall back to Cognito tokens
             cognito_tokens = json.loads(data["cognito_tokens"])
             access, refresh = (
                 cognito_tokens["access_token"],
@@ -103,7 +183,6 @@ class GranolaClient:
             )
             if not access or not refresh:
                 raise GranolaAuthError("Access or refresh token missing.")
-            logger.debug("Using Cognito tokens for authentication")
             return access, refresh
         except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
             logger.error(f"Failed to get auth tokens: {e}", exc_info=True)

@@ -1,22 +1,51 @@
 import asyncio
 import httpx
-import platform
 import json # For logging bodies, Pydantic handles main ser/de
 from typing import Optional, Callable, Awaitable, TypeVar, Dict, Any, Union, Type, cast, List
 import logging
 
 from pydantic import BaseModel, ValidationError, HttpUrl
 
+from . import _device
 from .types import HttpOpts # HttpOpts is now a Pydantic model
 from .errors import (
     GranolaAPIError, GranolaAuthError, GranolaRateLimitError,
-    GranolaTimeoutError, GranolaValidationError
+    GranolaTimeoutError, GranolaUnsupportedClientError, GranolaValidationError
 )
+
+# Fallback used only when we can't read the locally-installed Granola.app version.
+# Bump alongside the live desktop app when this library has rotted.
+_DEFAULT_APP_VERSION = "7.162.1"
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel) # Response model type
 P = TypeVar('P', bound=BaseModel) # Payload model type
+
+
+def _check_known_error_envelope(response_content: bytes) -> None:
+    """Raise a typed error if the response is a 200-with-error-shape envelope.
+
+    Granola sometimes returns HTTP 200 with bodies like {"message": "Unsupported client"}
+    instead of a 4xx. Without this check, pydantic raises a confusing validation error
+    about missing fields and hides the real cause.
+    """
+    if not response_content:
+        return
+    try:
+        body = json.loads(response_content)
+    except (json.JSONDecodeError, ValueError):
+        return
+    if not isinstance(body, dict):
+        return
+    keys = set(body.keys())
+    if keys != {"message"}:
+        return
+    message = body.get("message")
+    if not isinstance(message, str):
+        return
+    if message == "Unsupported client":
+        raise GranolaUnsupportedClientError(response_text=message)
 
 class HttpClient:
     def __init__(
@@ -25,35 +54,25 @@ class HttpClient:
         base_url: Union[str, HttpUrl] = "https://api.granola.ai", # Default from ClientOpts
         opts: Optional[HttpOpts] = None, # HttpOpts is Pydantic model
     ):
-        # If opts is None, create a default HttpOpts instance
-        # If opts is a dict, Pydantic will parse it
         parsed_opts = HttpOpts.model_validate(opts if opts is not None else {})
 
         self._token: Optional[str] = token
-        self.base_url_str: str = str(base_url).rstrip("/") # base_url from ClientOpts is HttpUrl
+        self.base_url_str: str = str(base_url).rstrip("/")
         self.timeout_ms: int = cast(int, parsed_opts.timeout)
         self.retries: int = cast(int, parsed_opts.retries)
 
-        self.app_version: str = cast(str, parsed_opts.app_version)
-        self.client_type: str = cast(str, parsed_opts.client_type)
+        # Identity headers — must mirror what the live Granola Electron app sends,
+        # because the API gates on them and returns "Unsupported client" otherwise.
+        self.app_version: str = (
+            parsed_opts.app_version
+            or _device.get_installed_granola_version()
+            or _DEFAULT_APP_VERSION
+        )
+        self.client_platform: str = parsed_opts.client_platform or _device.get_platform_label()
+        self.os_version: str = parsed_opts.os_version or _device.get_os_version()
+        self.device_id: Optional[str] = _device.get_hashed_device_id()
 
-        self.client_platform: str = parsed_opts.client_platform or platform.system().lower()
-        self.client_architecture: str = parsed_opts.client_architecture or platform.machine().lower()
-        self.electron_version: str = cast(str, parsed_opts.electron_version)
-        self.chrome_version: str = cast(str, parsed_opts.chrome_version)
-        self.node_version: str = cast(str, parsed_opts.node_version)
-
-        os_ver = platform.release()
-        if self.client_platform == "darwin":
-            os_ver = platform.mac_ver()[0]
-        elif self.client_platform == "win32": # platform.system() returns 'Windows'
-            self.client_platform = "windows" # align with common usage
-            os_ver = platform.win32_ver()[0]
-
-        self.os_version: str = parsed_opts.os_version or os_ver
-        self.os_build: str = parsed_opts.os_build or "" # Still hard to get reliably
-
-        self.client_headers: Dict[str, str] = cast(Dict[str,str], parsed_opts.client_headers)
+        self.client_headers: Dict[str, str] = cast(Dict[str, str], parsed_opts.client_headers or {})
 
         self._token_provider: Optional[Callable[[], Awaitable[str]]] = None
         self._token_fetch_lock = asyncio.Lock()
@@ -65,6 +84,14 @@ class HttpClient:
 
     def set_token_provider(self, provider: Callable[[], Awaitable[str]]) -> None:
         self._token_provider = provider
+
+    def invalidate_token(self) -> None:
+        """Drop the cached bearer token so the next request refetches via the provider.
+
+        Called when the server returns 401 mid-session — typically because a
+        short-lived access token expired between requests.
+        """
+        self._token = None
 
     async def _ensure_token(self) -> None:
         if self._token:
@@ -91,45 +118,41 @@ class HttpClient:
             except ValueError: pass
         return 0.25 * (2 ** attempt)
 
+    def _build_headers(self, body_data: Optional[Union[Dict[str, Any], List[Any], str]]) -> Dict[str, str]:
+        """Compose request headers — identity (X-Client-Version, X-Granola-*),
+        Authorization, and Content-Type/Accept based on body shape. Built per
+        request so a refreshed token gets picked up after a 401."""
+        headers: Dict[str, str] = {
+            "X-Client-Version": self.app_version,
+            "X-Granola-Platform": self.client_platform,
+            "X-Granola-Os-Version": self.os_version,
+        }
+        if self.device_id:
+            headers["X-Granola-Device-Id"] = self.device_id
+        headers.update(self.client_headers)
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        if isinstance(body_data, (dict, list)):
+            headers["Content-Type"] = "application/json"
+            headers["Accept"] = "application/json"
+        elif isinstance(body_data, str):
+            headers["Content-Type"] = "text/plain"
+        else:
+            headers["Accept"] = "application/json"
+        return headers
+
     async def _request_raw(
-        self, method: str, path: str, body_data: Optional[Union[Dict[str, Any], List[Any], str]] = None
+        self, method: str, path: str,
+        body_data: Optional[Union[Dict[str, Any], List[Any], str]] = None,
+        _allow_token_refresh: bool = True,
     ) -> httpx.Response:
         await self._ensure_token()
         url = f"{self.base_url_str}{path}"
-
-        # Build User-Agent in standard browser format (matches official Granola Electron app)
-        os_name = "Macintosh; Intel Mac OS X" if self.client_platform == "darwin" else self.client_platform
-        os_version_ua = self.os_version.replace(".", "_") if self.client_platform == "darwin" else self.os_version
-        user_agent = (
-            f"Mozilla/5.0 ({os_name} {os_version_ua}) AppleWebKit/537.36 (KHTML, like Gecko) "
-            f"Granola/{self.app_version} Chrome/{self.chrome_version} Electron/{self.electron_version} Safari/537.36"
-        )
-
-        headers: Dict[str, str] = {
-            "X-App-Version": self.app_version,
-            "User-Agent": user_agent,
-            "X-Client-Type": self.client_type,
-            "X-Client-Platform": self.client_platform,
-            "X-Client-Architecture": self.client_architecture,
-            "X-Client-Id": f"granola-{self.client_type}-{self.app_version}",
-            **self.client_headers,
-        }
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
-
         is_json_body = isinstance(body_data, (dict, list))
-        if is_json_body:
-            headers["Content-Type"] = "application/json"
-            headers["Accept"] = "application/json" # Usually expect JSON back for JSON posts
-        elif isinstance(body_data, str): # Assuming raw text body
-            headers["Content-Type"] = "text/plain" # Or other appropriate type
-            # Accept might still be JSON or text depending on endpoint
-        else: # No body
-             headers["Accept"] = "application/json" # Default accept for GET or bodiless POST
-
         last_error: Optional[Exception] = None
 
         for attempt in range(self.retries + 1):
+            headers = self._build_headers(body_data)
             try:
                 logger.debug(f"Request: {method} {url}, Attempt: {attempt + 1}/{self.retries + 1}")
                 if body_data: logger.debug(f"Request Body: {json.dumps(body_data) if is_json_body else str(body_data)[:200]}")
@@ -141,6 +164,21 @@ class HttpClient:
                 )
 
                 logger.debug(f"Response: {res.status_code}, Headers: {res.headers}")
+
+                if (
+                    res.status_code == 401
+                    and _allow_token_refresh
+                    and self._token_provider is not None
+                ):
+                    logger.info(
+                        "Got 401 on %s %s; invalidating token and retrying once after refresh.",
+                        method, path,
+                    )
+                    await res.aread()
+                    self.invalidate_token()
+                    return await self._request_raw(
+                        method, path, body_data=body_data, _allow_token_refresh=False
+                    )
 
                 if res.status_code == 429:
                     retry_after = res.headers.get("Retry-After")
@@ -181,6 +219,11 @@ class HttpClient:
                 logger.warning(f"Request error on attempt {attempt + 1} for {url}. Error: {e}")
                 if attempt < self.retries: await asyncio.sleep(self._get_backoff_delay(attempt)); continue
                 raise last_error
+            except GranolaAPIError:
+                # Already a typed error (e.g. from a nested refresh-and-retry call,
+                # or surfaced by raise_for_status above) — propagate without wrapping
+                # so callers keep status_code / response_text on the original.
+                raise
             except Exception as e:
                 last_error = GranolaAPIError(f"An unexpected error occurred: {e}")
                 logger.error(f"Unexpected error: {e}", exc_info=True); raise last_error
@@ -203,16 +246,11 @@ class HttpClient:
         response = await self._request_raw(method, path, body_data=body_to_send)
 
         try:
-            # Ensure we read the content before trying to parse, especially if streamed.
-            # For httpx, .json() handles this.
-            # We use model_validate_json for Pydantic.
-            response_content = await response.aread() # Read content bytes
-            if not response_content: # Handle empty response if model allows (e.g. Optional fields)
-                # This case is tricky. If response_model expects data, empty content is an error.
-                # If response_model can be valid with all defaults / Optionals, it might pass.
-                # Pydantic will raise ValidationError if required fields are missing.
+            response_content = await response.aread()
+            if not response_content:
                 logger.warning(f"Empty response content received for {method} {path}")
 
+            _check_known_error_envelope(response_content)
             return response_model.model_validate_json(response_content)
         except ValidationError as e:
             err_text = response_content.decode(response.encoding or 'utf-8', errors='replace') if response_content else "(empty response)"
@@ -235,10 +273,9 @@ class HttpClient:
             body_to_send = payload_dict
 
         response = await self._request_raw(method, path, body_data=body_to_send)
-        # For void methods, we typically expect 204 No Content or 200/201 with empty/ignorable body.
-        # raise_for_status() in _request_raw already checks for >=400 errors.
-        # We might want to consume the response body to free resources, though httpx might do this.
-        await response.aread()
+        # raise_for_status() in _request_raw covers 4xx/5xx; check the body for the
+        # 200-with-error envelope Granola uses for "Unsupported client".
+        _check_known_error_envelope(await response.aread())
         return None
 
     async def get_text(self, path: str) -> str:
